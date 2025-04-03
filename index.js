@@ -147,7 +147,7 @@ client.on('messageCreate', async (message) => {
                         .join('\n');
 
                 // Respect Discord message limit (2000);
-                queueString = queueString.length >= 2000 ? `${queueString.slice(0, 1997)}...` : queueString;
+                queueString = queueString.length >= 1900 ? `${queueString.slice(0, 1897)}...` : queueString;
 
                 message.channel.send(`${emoji.general} ${queueString}`);
 
