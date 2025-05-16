@@ -7,7 +7,7 @@ const ffmpegPath = require('ffmpeg-static');
 
 // Local Project Dependencies
 const { logMessage, logError } = require('./libs/logger');
-const { getTimeoutMinutes, setTimeoutMinutes, getInactivityTimeout, setInactivityTimeout } = require('./libs/serverSettings');
+const { getAllSettings, getPrefix, setPrefix, getTimeoutMinutes, setTimeoutMinutes, getInactivityTimeout, setInactivityTimeout } = require('./libs/serverSettings');
 const { getDiscordToken, getBotAdminId, getDebugLoggingMode, setDebugLoggingMode } = require('./libs/adminSettings');
 
 const client = new Client({
@@ -38,7 +38,11 @@ client.once('ready', () => {
 });
 
 client.on('messageCreate', async (message) => {
-    if (message.author.bot || !message.content.startsWith('!')) return;
+
+    const server = message.guild;
+    const serverPrefix = getPrefix(server.id);
+
+    if (message.author.bot || !message.content.startsWith(serverPrefix)) return;
 
     const args = message.content.slice(1).trim().split(/ +/g);
     const command = args.shift()?.toLowerCase();
@@ -48,7 +52,6 @@ client.on('messageCreate', async (message) => {
         return message.reply(`${emoji.error} You must be in a voice channel to use commands.`);
     }
 
-    const server = userVoiceChannel.guild;
     const queue = distube.getQueue(userVoiceChannel);
     if (queue &&
         queue?.voice?.channel.id != userVoiceChannel.id &&
@@ -63,7 +66,7 @@ client.on('messageCreate', async (message) => {
         switch (command) {
             case 'play':
 
-                if (args.length < 1) return message.reply(`${emoji.error} Please provide a YouTube/Spotify URL or search query.`);
+                if (args.length < 1) return message.reply(`${emoji.error} Please provide a YouTube/Youtube Music/Spotify URL or search query.`);
 
                 const loadingMsg = await message.channel.send(`${emoji.general} Loading song. Please wait a moment...`);
 
@@ -114,40 +117,127 @@ client.on('messageCreate', async (message) => {
 
                 break;
             case 'skip':
+            case 'next':
+            case 'ff':
 
                 if (!queue) return message.reply(`${emoji.error} The queue is empty, so there is nothing to skip to.`);
 
-                if (queue.songs.length <= 1) {
-                    return message.reply(`${emoji.error} You are at the end of the queue, so there is nothing to skip to.`);
+                if (args.length < 1) {
+
+                    if (queue.songs.length <= 1) {
+                        return message.reply(`${emoji.error} You are at the end of the queue, so there is nothing to skip to.`);
+                    }
+    
+                    await queue.skip();
+
+                    await message.channel.send(`${emoji.general} Skipping to the next song...`);
+
+                } else {
+
+                    var songNumber = parseInt(args[0]);
+
+                    if (!isNaN(songNumber) &&
+                        (songNumber > 0 && songNumber < queue.songs.length)) {
+
+                            await queue.jump(songNumber);
+
+                            await message.channel.send(`${emoji.general} Skipped to song #${songNumber}.`);
+
+                    } else if (!isNaN(songNumber) &&
+                        (songNumber < 0 && Math.abs(songNumber) <= queue.previousSongs.length)) {
+
+                            var songDist = Math.abs(songNumber);
+
+                            await queue.jump(songNumber);
+
+                            await message.channel.send(`${emoji.general} Jumped back ${songDist} song${songDist > 1 ? 's' : ''}.`);
+
+                    } else {
+
+                        return message.reply(`${emoji.error} Invalid skip value.`);
+                    }
                 }
 
-                await queue.skip();
-                await message.channel.send(`${emoji.error} Skipping to the next song...`);
-
                 break;
-            case 'rewind':
+            case 'previous':
+            case 'last':
+            case 'rw':
 
-                if (!queue) return message.reply(`${emoji.error} The queue is empty, so there is nothing to rewind to.`);
+                if (!queue) return message.reply(`${emoji.error} The queue is empty, so there is nothing to go back to.`);
 
                 if (queue.previousSongs.length <= 0) {
-                    return message.reply(`${emoji.error} You are at the beginning of the queue, so there is nothing to rewind to.`);
+                    return message.reply(`${emoji.error} You are at the beginning of the queue, so there is nothing to go back to.`);
                 }
 
                 await queue.previous();
-                await message.channel.send(`${emoji.error} Rewinding to the previous song...`);
+                await message.channel.send(`${emoji.general} Rewinding to the previous song...`);
+
+                break;
+            case 'shuffle':
+            case 'random':
+
+                if (!queue) return message.reply(`${emoji.error} The queue is empty, so there is nothing to shuffle.`);
+
+                await queue.shuffle();
+                await message.channel.send(`${emoji.general} Queue has been shuffled.`);
+
+                break;
+            case 'repeat':
+
+                if (!queue) return message.reply(`${emoji.error} The queue is empty, so there is nothing to repeat.`);
+
+                if (args.length < 1) return message.reply(`${emoji.error} Setting a repeat mode requires a value.`);
+
+                const repeatMode = args[0].toLowerCase();
+
+                const repeatModeMap = {
+                    off: 0,
+                    song: 1,
+                    queue: 2,
+                };
+                
+                if (repeatMode in repeatModeMap) {
+
+                    await queue.setRepeatMode(repeatModeMap[repeatMode]);
+
+                    message.channel.send(`${emoji.general} Repeat mode set to \`${repeatMode.toUpperCase()}\`.`);
+                } else {
+
+                    return message.reply(`${emoji.error} Invalid repeat mode value.`);
+                }
+
+                break;
+            case 'seek':
+
+                if (!queue) return message.reply(`${emoji.error} The queue is empty, so there is nothing to seek.`);
+
+                if (args.length < 1) return message.reply(`${emoji.error} Seeking to a time in a song requires a value.`);
+
+                var seekTime = parseInt(args[0]);
+
+                if (!isNaN(seekTime) &&
+                    (seekTime >= 0 && seekTime <= 100000)) {
+
+                        await queue.seek(seekTime);
+
+                        await message.channel.send(`${emoji.general} Time seek set to ${seekTime} seconds.`);
+                } else {
+
+                    return message.reply(`${emoji.error} Invalid seek value.`);
+                }
 
                 break;
             case 'queue':
+            case 'list':
 
                 if (!queue) return message.channel.send(`${emoji.error} The queue is empty.`);
 
                 var queueString = `**Current Queue:**\n` +
                     queue.songs
-                        .map((song, index) => `${index + 1}. ${song.name} - \`${song.formattedDuration}\``)
+                        .map((song, index) => `${index == 0 ? '🎵  Now Playing:' : `${index}.`} ${song.name} - \`${song.formattedDuration}\``)
                         .join('\n');
 
-                // Respect Discord message limit (2000);
-                queueString = queueString.length >= 1900 ? `${queueString.slice(0, 1897)}...` : queueString;
+                queueString = truncateForDiscord(queueString);
 
                 message.channel.send(`${emoji.general} ${queueString}`);
 
@@ -176,15 +266,64 @@ client.on('messageCreate', async (message) => {
                 }
 
                 break;
+            case 'servers':
+
+                if (message.author.id != getBotAdminId()) return message.reply(`Only the bot administrator may view the connected server list.`);
+
+                var serverListString = `Connected servers: ${client.guilds.cache.size}\n` +
+                    client.guilds.cache
+                        .map(guild => `- ${guild.id}: ${guild.name}`)
+                        .join('\n');
+
+                serverListString = truncateForDiscord(serverListString);
+
+                message.channel.send(`${serverListString}`);
+
+                break;
+            case 'settings':
+
+                if (message.author.id != getBotAdminId()) return message.reply(`Only the bot administrator may view server settings.`);
+
+                var settingsString = JSON.stringify(getAllSettings(), null, 2);
+
+                settingsString = truncateForDiscord(settingsString);
+
+                message.channel.send(`${settingsString}`);
+
+                break;
+            case 'prefix':
+                if (args.length < 1) return message.reply(`Setting a new prefix requires a value.`);
+
+                const newPrefix = args[0];
+
+                switch (newPrefix) {
+                    case '!':
+                    case '?':
+                    case '-':
+                    case '~':
+                    case '$':
+                    case '/':
+
+                        setPrefix(server.id, newPrefix);
+
+                        message.channel.send(`Command prefix now set to \`${newPrefix}\`.`);
+
+                        break;
+                    default:
+
+                        return message.reply(`Invalid prefix value. Valid values are \`!\`, \`?\`, \`-\`, \`~\`, \`$\`, and \`/\`.`);
+                }
+
+                break;
             case 'timeout':
 
                 if (args.length < 1) return message.reply(`${emoji.error} Setting a timeout requires a value.`);
 
-                const number = parseInt(args[0]);
-                if (!isNaN(number) && number >= 0 && number <= 60) {
-                    setTimeoutMinutes(server.id, number);
+                const newTimeout = parseInt(args[0]);
+                if (!isNaN(newTimeout) && newTimeout >= 0 && newTimeout <= 60) {
+                    setTimeoutMinutes(server.id, newTimeout);
 
-                    message.channel.send(`${emoji.general} Inactivity timeout set to \`${number} minutes\`.`);
+                    message.channel.send(`${emoji.general} Inactivity timeout set to \`${newTimeout} minutes\`.`);
                 } else {
                     return message.reply(`${emoji.error} Invalid timeout value.`);
                 }
@@ -192,19 +331,28 @@ client.on('messageCreate', async (message) => {
                 break;
             case 'help':
 
-                message.channel.send('```Available commands are:\n\n' +
-                    'Music:\n' +
-                    '!play {url|search term} - Plays a YouTube/Spotify URL or search term. The song is added to the queue if a song is playing.\n' +
-                    '!pause - Pauses current playback.\n' +
-                    '!resume - Resumes playback.\n' +
-                    '!stop - Stops any current music and clears the queue.\n' +
-                    '!kill - Disconnects the bot from the voice channel.\n' +
-                    '!skip - Plays the next song in the queue.\n' +
-                    '!rewind - Plays the previous song in the queue.\n' +
-                    '!queue - Displays the current queue.\n\n' +
-                    'Other:\n' +
-                    '!help - Displays the list of available commands.\n' +
-                    '!timeout {minutes (0-60)} - Sets the time the bot will wait to disconnect after the queue completes.```');
+                var helpMessage = 'The following commands are supported:\n\n' +
+                    '🎵 **Music Playback**\n\n' +
+                    '`!play {url|search term}` - Plays a YouTube/Youtube Music/Spotify link or search term. The song is added to the queue if a song is playing.\n' +
+                    '`!pause` - Pauses playback.\n' +
+                    '`!resume` - Resumes playback.\n' +
+                    '`!seek {seconds}` - Sets the current song playback to the specified time.\n' +
+                    '`!stop` - Stops music and clears the queue.\n\n' +
+                    '📀 **Playlist Control**\n\n' +
+                    '`!queue` - Shows the current song queue.  *Aliases*: `!list`\n' +
+                    '`!skip {number (optional)}` - Plays the next song. If a number is provided, skips the specified number of songs.  *Aliases*: `!next`, `!ff`\n' +
+                    '`!previous` - Plays the previous song.  *Aliases*: `!last`, `!rw`\n' +
+                    '`!shuffle` - Randomizes the order of the queue.  *Aliases*: `!random`\n' +
+                    '`!repeat {off|song|queue}` - Sets the repeat mode for the current song or queue.\n\n' +
+                    '🛠 **Other Commands**\n\n' +
+                    '`!help` - Displays the list of available commands.\n' +
+                    '`!prefix` - Sets the prefix for running commands.\n' +
+                    '`!kill` - Disconnects the bot from the voice channel.\n' +
+                    '`!timeout {minutes (0-60)}` - Sets how long the bot waits to disconnect once the queue finishes.';
+
+                helpMessage = helpMessage.replaceAll('!', getPrefix(server.id));
+
+                message.channel.send(helpMessage);
 
                 break;
         }
@@ -322,6 +470,13 @@ function createInactivityTimeout(server, textChannel, minutes) {
 
         setInactivityTimeout(server.id, null);
     }, minutes * 60 * 1000);
+};
+
+// Ensure a message respects Discord message limit (2000).
+function truncateForDiscord(message) {
+    return message.length >= 1900
+        ? `${message.slice(0, 1897)}...`
+        : message;
 };
 
 client.login(getDiscordToken());

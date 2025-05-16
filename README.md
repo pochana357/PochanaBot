@@ -6,22 +6,70 @@ This bot requires no YouTube login, and avoids the hassle of requiring numerous 
 # Features
 Supports the following commands:
 
-Music:
-- !play {url|search term} - Plays a YouTube/Spotify URL or search term. The song is added to the queue if a song is playing.
-- !pause - Pauses current playback.
-- !resume - Resumes playback.
-- !stop - Stops any current music and clears the queue.
-- !kill - Disconnects the bot from the voice channel.
-- !skip - Plays the next song in the queue.
-- !rewind - Plays the previous song in the queue.
-- !queue - Displays the current queue.
+### 🎵 Music Playback
 
-Other:
-- !help - Displays the list of available commands.
-- !timeout {minutes (0-60)} - Sets the time the bot will wait to disconnect after the queue completes.
+**`!play {url|search term}`**  
+Plays a YouTube/Youtube Music/Spotify link or search term.  
+The song is added to the queue if a song is playing.
 
-Bot Admins Only:
-- !debug {off|on|verbose} - Sets the desired debug logging mode.
+**`!pause`**  
+Pauses playback.
+
+**`!resume`**  
+Resumes playback.
+
+**`!seek {seconds}`**  
+Sets the current song playback to the specified time.
+
+**`!stop`**  
+Stops music and clears the queue.
+
+### 📀 Playlist Control
+
+**`!queue`**  
+Shows the current song queue.  
+*Aliases*: `!list`
+
+**`!skip {number (optional)}`**  
+Plays the next song.  
+If a number is provided, skips the specified number of songs.  
+*Aliases*: `!next`,`!ff`
+
+**`!previous`**  
+Plays the previous song.  
+*Aliases*: `!last`,`!rw`
+
+**`!shuffle`**  
+Randomizes the order of the queue.  
+*Aliases*: `!random`
+
+**`!repeat {off|song|queue}`**  
+Sets the repeat mode for the current song or queue.
+
+### 🛠️ Other Commands
+
+**`!help`**  
+Displays the list of available commands.
+
+**`!prefix`**  
+Sets the prefix for running commands.
+
+**`!kill`**  
+Disconnects the bot from the voice channel.
+
+**`!timeout {minutes (0-60)}`**  
+Sets how long the bot waits to disconnect once the queue finishes.
+
+### 🔒 Bot Admins Only
+
+**`!debug {off|on|verbose}`**  
+Sets the debug logging level.
+
+**`!servers`**  
+Shows a list of all connected servers.
+
+**`!settings`**  
+Shows the settings for all connected servers.
 
 # Setup
 
@@ -42,7 +90,13 @@ There are two parts to the setup. First, you must create a bot user to add to yo
 
 ## Linux (Docker) Instructions
 1) Install [Docker](https://docs.docker.com/engine/install/).
-2) Copy the required contents of the project folder (the libs folder, Dockerfile, index.js, package.json, and the .env file you created in the previous step) into a folder on your server (ex. /HarmoniBot).
+2) Copy the required contents of the project folder into a folder on your server (ex. /HarmoniBot).
+    - libs folder
+    - package_overrides folder
+    - Dockerfile
+    - index.js
+    - package.json
+    - .env file
 3) Change your running directory to this newly created folder and run the following command to create the Docker image: `docker build -t harmonibot .`
 4) Once complete, run this command to create and run the Docker container: `docker run -d --name harmonibot-container harmonibot`
 
