@@ -33,7 +33,7 @@ const distube = new DisTube(client, {
 const emoji = { play: '<:pkm_pochiena07:1242333077129265282>', stop: '<:pkm_pochiena06:1242333081046614016>', error: '<:pkm_pochiena10:1242333629397340281>', general: '<:pkm_pochiena05:1242333078849064960>' };
 const sticker = { enter: '1277193362327474249', leave: '1277193575561429164' };
 
-client.once('ready', () => {
+client.once('clientReady', () => {
     logMessage(`${client.user.tag} is online and ready!`);
 });
 
