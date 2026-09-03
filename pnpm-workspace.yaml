@@ -1,0 +1,5 @@
+allowBuilds:
+  '@discordjs/opus': true
+engineStrict: true
+overrides:
+  '@discordjs/node-pre-gyp@0.4.5>tar': 7.5.22

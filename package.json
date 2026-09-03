@@ -1,25 +1,44 @@
 {
-  "name": "harmonibot",
-  "version": "0.9.0",
-  "main": "index.js",
+  "name": "pochanabot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc -p tsconfig.json",
+    "check": "pnpm format:check && pnpm lint && pnpm build && pnpm typecheck:tests && pnpm test",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "lint": "eslint . --max-warnings=0",
+    "start": "node dist/main.js",
+    "deploy:test": "pnpm build && node dist/deploy-commands.js test",
+    "deploy:global": "pnpm build && node dist/deploy-commands.js global",
+    "test": "vitest run",
+    "test:youtube": "vitest run --config vitest.youtube.config.ts",
+    "typecheck:tests": "tsc -p tsconfig.test.json"
   },
-  "keywords": [],
-  "author": "",
   "license": "MIT",
-  "description": "",
-  "dependencies": {
-    "@distube/spotify": "^2.0.2",
-    "@distube/youtube": "^1.0.4",
-    "@distube/ytdl-core": "https://codeload.github.com/ToddyTheNoobDud/ytdl-core-stuff/tar.gz/refs/heads/master",
-    "@snazzah/davey": "^0.1.7",
-    "dotenv": "^16.4.7",
-    "ffmpeg-static": "^5.2.0",
-    "libsodium-wrappers": "^0.7.15",
-    "opusscript": "^0.0.8"
+  "description": "A modular YouTube voice bot for Discord.",
+  "packageManager": "pnpm@11.3.0",
+  "engines": {
+    "node": ">=22.13"
   },
-  "overrides": {
-    "superagent": "^10.2.0"
+  "dependencies": {
+    "@discordjs/opus": "^0.10.0",
+    "@discordjs/voice": "^0.19.2",
+    "discord.js": "^14.27.0",
+    "dotenv": "^17.4.2",
+    "libsodium-wrappers": "^0.8.4",
+    "youtubei.js": "^18.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.4.1",
+    "eslint": "^10.9.1",
+    "eslint-config-prettier": "10.1.8",
+    "prettier": "3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.69.0",
+    "vitest": "^4.1.11"
   }
 }
