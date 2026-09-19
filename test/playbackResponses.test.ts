@@ -19,6 +19,7 @@ import {
   skipMessage,
   stopMessage,
 } from '../src/presentation/playback-responses.js';
+import { speakingMessage } from '../src/presentation/tts-responses.js';
 
 function makeTrack(index = 0, overrides: Partial<Track> = {}): Track {
   const id = String(index).padStart(11, '0');
@@ -181,4 +182,11 @@ test('Discord formatting helpers escape text without corrupting masked-link labe
   assert.equal(truncate('abcdef', 4), 'abc…');
   assert.equal(escapeMarkdown('a *track* [name]'), 'a \\*track\\* [name]');
   assert.equal(linkedTrack({ title, webpageUrl }), `[${title}](${webpageUrl})`);
+});
+
+test('TTS announcements show only the compact voice name', () => {
+  assert.equal(
+    speakingMessage('안녕하세요', '루미 (Korean, Fish)'),
+    '🔊 **루미**: 안녕하세요',
+  );
 });

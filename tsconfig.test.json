@@ -9,6 +9,7 @@
     "src/**/*.ts",
     "test/**/*.ts",
     "vitest.config.ts",
-    "vitest.youtube.config.ts"
+    "vitest.youtube.config.ts",
+    "vitest.tts.config.ts"
   ]
 }

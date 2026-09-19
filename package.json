@@ -15,7 +15,8 @@
     "deploy:global": "pnpm build && node dist/deploy-commands.js global",
     "test": "vitest run",
     "test:youtube": "vitest run --config vitest.youtube.config.ts",
-    "typecheck:tests": "tsc -p tsconfig.test.json"
+    "typecheck:tests": "tsc -p tsconfig.test.json",
+    "test:tts": "vitest run --config vitest.tts.config.ts"
   },
   "license": "MIT",
   "description": "A modular YouTube voice bot for Discord.",
@@ -29,11 +30,13 @@
     "discord.js": "^14.27.0",
     "dotenv": "^17.4.2",
     "libsodium-wrappers": "^0.8.4",
+    "ws": "^8.21.3",
     "youtubei.js": "^18.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.4.1",
+    "@types/ws": "^8.18.1",
     "eslint": "^10.9.1",
     "eslint-config-prettier": "10.1.8",
     "prettier": "3.9.6",

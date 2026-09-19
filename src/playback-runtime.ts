@@ -8,8 +8,12 @@ import {
   joinVoiceChannel,
   type DiscordGatewayAdapterCreator,
 } from '@discordjs/voice';
-import { createAudioPipeline } from './audio/ffmpeg.js';
-import type { Track } from './media.js';
+import {
+  createAudioPipeline,
+  createPcmPipeline,
+  decodeToPcm,
+  type TranscodeOptions,
+} from './audio/ffmpeg.js';
 
 const CONNECTION_TIMEOUT_MS = 15_000;
 
@@ -48,9 +52,20 @@ export interface PlaybackRuntime {
   ): Promise<PlaybackController>;
   createPipeline(
     source: Readable,
-    track: Track,
+    metadata: object,
     onError: (error: Error) => void,
+    options?: TranscodeOptions,
   ): PlaybackPipeline;
+  /**
+   * Decodes a complete speech container and returns a ready pipeline. Decoding
+   * up front means an undecodable response is reported before playback is
+   * acknowledged, and leaves no transcoder running during playback.
+   */
+  createSpeechPipeline(
+    audio: Buffer,
+    metadata: object,
+    signal: AbortSignal,
+  ): Promise<PlaybackPipeline>;
 }
 
 export class DiscordPlaybackRuntime implements PlaybackRuntime {
@@ -140,9 +155,18 @@ export class DiscordPlaybackRuntime implements PlaybackRuntime {
 
   createPipeline(
     source: Readable,
-    track: Track,
+    metadata: object,
     onError: (error: Error) => void,
+    options?: TranscodeOptions,
   ): PlaybackPipeline {
-    return createAudioPipeline(source, track, onError);
+    return createAudioPipeline(source, metadata, onError, options);
+  }
+
+  async createSpeechPipeline(
+    audio: Buffer,
+    metadata: object,
+    signal: AbortSignal,
+  ): Promise<PlaybackPipeline> {
+    return createPcmPipeline(await decodeToPcm(audio, signal), metadata);
   }
 }

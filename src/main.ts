@@ -14,14 +14,29 @@ import {
 import { createCommandMap } from './commands/catalog.js';
 import { commandFailed } from './commands/command.js';
 import { handleQueueButton } from './commands/queue.js';
-import { requireEnvironment } from './config.js';
+import { optionalEnvironment, requireEnvironment } from './config.js';
 import { logger } from './logger.js';
 import { PlaybackManager } from './playback-manager.js';
 import { YouTubeMediaProvider } from './providers/youtube.js';
+import { EdgeTtsEngine } from './tts/edge-engine.js';
+import { FishTtsEngine } from './tts/fish-engine.js';
+import { TtsService } from './tts/tts-service.js';
+import { InMemoryVoicePreferenceStore } from './tts/voice-preferences.js';
 
 const provider = new YouTubeMediaProvider();
-const playback = new PlaybackManager(provider);
-const commands = createCommandMap(provider, playback);
+// A missing Fish key is not fatal: those presets report it when used.
+const tts = new TtsService(
+  [
+    new EdgeTtsEngine(),
+    new FishTtsEngine({
+      apiKey: optionalEnvironment('FISH_API_KEY'),
+      model: optionalEnvironment('FISH_MODEL'),
+    }),
+  ],
+  new InMemoryVoicePreferenceStore(),
+);
+const playback = new PlaybackManager(provider, { speech: tts });
+const commands = createCommandMap(provider, playback, tts);
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],

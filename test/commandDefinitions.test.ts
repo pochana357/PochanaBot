@@ -26,6 +26,7 @@ import { executeVoiceControl } from '../src/commands/voice-control.js';
 import { commandSucceeded } from '../src/commands/command.js';
 import type { MediaProvider, PlaylistProvider, Track } from '../src/media.js';
 import type { PlaybackManager } from '../src/playback-manager.js';
+import type { TtsService } from '../src/tts/tts-service.js';
 
 type ReplyPayload = {
   content?: string;
@@ -56,6 +57,8 @@ test('deployment exposes the complete slash-command surface', () => {
       'stop',
       'disconnect',
       'queue',
+      'tts',
+      'preset-tts',
     ],
   );
 });
@@ -91,7 +94,7 @@ test('command routing maps every definition to its implementation', () => {
     createPlaybackStream: async () => Readable.from([]),
   };
   const playback = {} as PlaybackManager;
-  const commands = createCommandMap(provider, playback);
+  const commands = createCommandMap(provider, playback, {} as TtsService);
   const productionNames = commandDefinitions.map(
     (definition) => definition.name,
   );

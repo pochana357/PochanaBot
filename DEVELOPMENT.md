@@ -20,7 +20,7 @@ pnpm deploy:global
 
 Each deployment command runs `pnpm build` first. Registration then loads the generated JavaScript from `dist/`, so Discord receives command definitions from the current source code rather than files left over from an earlier build.
 
-Deploying replaces the commands in the selected scope with the nine definitions in this repository. Reinviting the bot is unnecessary as long as its existing installation includes the `applications.commands` scope.
+Deploying replaces the commands in the selected scope with the twelve definitions in this repository. Reinviting the bot is unnecessary as long as its existing installation includes the `applications.commands` scope.
 
 ## Validation
 
@@ -51,6 +51,18 @@ pnpm test:youtube
 ```
 
 The live YouTube integration tests resolve a 100-track playlist and download the provider-managed stream for one video. The playback test requires FFmpeg on the system `PATH` or as `./ffmpeg` in the working directory to decode the complete track. These tests do not connect to Discord and are not included in `pnpm test` or `pnpm check`.
+
+```bash
+pnpm test:tts
+```
+
+The live text-to-speech tests synthesize short phrases with both engines and decode them through the playback pipeline, asserting the Opus frame count Discord would receive. They also guard the pinned browser version in `src/tts/edge-engine.ts`. Microsoft enforces a minimum Edge version through the `User-Agent`, and answers anything older with a bare HTTP 403 that is indistinguishable from a rejected token. Measured 2026-09-19 against the speech WebSocket endpoint:
+
+- `Edg/131` is refused; `Edg/132` is accepted, so the floor sits between them.
+- The `Sec-MS-GEC-Version` query parameter is only shape-checked. Any four-part `1-W.X.Y.Z` is accepted regardless of the version it names, while `1-143`, a bare `143.0.3650.75`, or an empty value is refused.
+- A missing `User-Agent`, a Chrome string without the `Edg/` token, and an arbitrary string are all refused.
+
+So when this starts failing, raise `CHROMIUM_MAJOR_VERSION` (which builds the `User-Agent`) to a current Edge release; bump `CHROMIUM_FULL_VERSION` alongside it to stay aligned with upstream edge-tts. The Fish case is skipped unless `FISH_API_KEY` is set. Like the YouTube tests, these need FFmpeg and are excluded from `pnpm check`.
 
 ## Architecture
 

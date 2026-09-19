@@ -21,3 +21,10 @@ export function requireDiscordId(
   }
   return value;
 }
+
+export function optionalEnvironment(
+  name: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  return environment[name]?.trim() || undefined;
+}

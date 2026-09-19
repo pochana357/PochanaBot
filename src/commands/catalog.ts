@@ -1,5 +1,6 @@
 import type { MediaProvider, PlaylistProvider } from '../media.js';
 import type { PlaybackManager } from '../playback-manager.js';
+import type { TtsService } from '../tts/tts-service.js';
 import type { Command, CommandDefinition } from './command.js';
 import { createDisconnectCommand, disconnectDefinition } from './disconnect.js';
 import { createPauseCommand, pauseDefinition } from './pause.js';
@@ -10,11 +11,13 @@ import {
   playNextDefinition,
 } from './play.js';
 import { createPlaylistCommand, playlistDefinition } from './playlist.js';
+import { createPresetTtsCommand, presetTtsDefinition } from './preset-tts.js';
 import { createQueueCommand, queueDefinition } from './queue.js';
 import { createRemoveCommand, removeDefinition } from './remove.js';
 import { createResumeCommand, resumeDefinition } from './resume.js';
 import { createSkipCommand, skipDefinition } from './skip.js';
 import { createStopCommand, stopDefinition } from './stop.js';
+import { createTtsCommand, ttsDefinition } from './tts.js';
 
 // Deployment and runtime routing share this catalog to prevent command drift.
 export const commandDefinitions = Object.freeze([
@@ -28,6 +31,8 @@ export const commandDefinitions = Object.freeze([
   stopDefinition,
   disconnectDefinition,
   queueDefinition,
+  ttsDefinition,
+  presetTtsDefinition,
 ]);
 
 export type CommandDeploymentTarget = 'test' | 'global';
@@ -53,6 +58,7 @@ export function commandPayloadsFor(
 export function createCommandMap(
   provider: MediaProvider & PlaylistProvider,
   playback: PlaybackManager,
+  tts: TtsService,
 ): ReadonlyMap<string, Command> {
   const commands = [
     createPlayCommand(provider, playback),
@@ -65,6 +71,8 @@ export function createCommandMap(
     createStopCommand(playback),
     createDisconnectCommand(playback),
     createQueueCommand(playback),
+    createTtsCommand(tts, playback),
+    createPresetTtsCommand(tts),
   ];
   return new Map(
     commands.flatMap((command) => [

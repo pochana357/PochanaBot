@@ -9,6 +9,12 @@ import {
   type PlaybackManagerOptions,
   type VoiceRequestContext,
 } from '../src/playback-manager.js';
+import type { SpeechSynthesizer } from '../src/tts/tts-service.js';
+import {
+  TtsError,
+  type TtsAudio,
+  type TtsVoicePreset,
+} from '../src/tts/tts.js';
 import type {
   PlaybackController,
   PlaybackControllerState,
@@ -83,6 +89,9 @@ class FakeRuntime implements PlaybackRuntime {
   readonly sessions = new Map<string, FakeSession>();
   readonly plays: PlayRecord[] = [];
   readonly disposals: string[] = [];
+  readonly volumes: (number | undefined)[] = [];
+  readonly decoded: string[] = [];
+  readonly failDecode = new Set<string>();
   failConnection = false;
 
   async connect(
@@ -103,10 +112,9 @@ class FakeRuntime implements PlaybackRuntime {
       play: (resource: unknown, generation: number) => {
         state.generation = generation;
         state.status = 'playing';
-        const { track: value } = resource as { track: Track };
         this.plays.push({
           guildId: request.guildId,
-          title: value.title,
+          title: (resource as { label: string }).label,
           generation,
         });
       },
@@ -132,12 +140,42 @@ class FakeRuntime implements PlaybackRuntime {
     };
   }
 
-  createPipeline(source: Readable, value: Track): PlaybackPipeline {
+  createPipeline(
+    source: Readable,
+    metadata: object,
+    _onError: (error: Error) => void,
+    options?: { volume?: number },
+  ): PlaybackPipeline {
+    // Metadata is a Track for music and a queued utterance for speech.
+    const label =
+      'title' in metadata
+        ? (metadata as Track).title
+        : (metadata as { text: string }).text;
+    this.volumes.push(options?.volume);
     return {
-      resource: { track: value },
+      resource: { label },
       dispose: () => {
         source.destroy();
-        this.disposals.push(value.title);
+        this.disposals.push(label);
+      },
+    };
+  }
+
+  async createSpeechPipeline(
+    audio: Buffer,
+    metadata: object,
+  ): Promise<PlaybackPipeline> {
+    const label = (metadata as { text: string }).text;
+    this.decoded.push(label);
+    if (this.failDecode.has(label)) {
+      throw new Error(`cannot decode ${label}`);
+    }
+    // Speech is never attenuated, so no volume is recorded for it.
+    assert.ok(audio.length > 0);
+    return {
+      resource: { label },
+      dispose: () => {
+        this.disposals.push(label);
       },
     };
   }
@@ -161,16 +199,61 @@ class FakeRuntime implements PlaybackRuntime {
   }
 }
 
+class FakeSpeech implements SpeechSynthesizer {
+  readonly requests: string[] = [];
+  readonly failOn = new Set<string>();
+
+  async synthesize(
+    text: string,
+    _preset: TtsVoicePreset,
+    signal: AbortSignal,
+  ): Promise<TtsAudio> {
+    this.requests.push(text);
+    if (signal.aborted) throw new TtsError('cancelled');
+    if (this.failOn.has(text)) throw new TtsError(`cannot speak ${text}`);
+    return { data: Buffer.from(text), contentType: 'audio/mpeg' };
+  }
+}
+
+async function waitFor(
+  condition: () => boolean,
+  description: string,
+): Promise<void> {
+  // Speech drains outside the guild lock, so the drive loop settles a few ticks
+  // after the event that triggered it.
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.fail(`timed out waiting for ${description}`);
+}
+
+function utterance(text: string) {
+  return {
+    text,
+    preset: {
+      id: 'aria',
+      label: 'Aria',
+      engine: 'edge',
+      voice: 'en-US-AriaNeural',
+      language: 'en',
+    } satisfies TtsVoicePreset,
+    requestedBy: { id: 'user', displayName: 'Tester' },
+  };
+}
+
 function createHarness(options: PlaybackManagerOptions = {}) {
   const provider = new FakeProvider();
   const runtime = new FakeRuntime();
+  const speech = new FakeSpeech();
   const manager = new PlaybackManager(provider, {
     runtime,
     emptyDisconnectMs: 60_000,
     logger: { error() {} },
+    speech,
     ...options,
   });
-  return { manager, provider, runtime, PlaybackRequestError };
+  return { manager, provider, runtime, speech, PlaybackRequestError };
 }
 
 test('enqueues two tracks and advances in order when the player becomes idle', async () => {
@@ -631,4 +714,387 @@ test('graceful shutdown destroys every guild session', async () => {
   );
   assert.equal(runtime.sessions.get('guild-a')?.destroyed, true);
   assert.equal(runtime.sessions.get('guild-b')?.destroyed, true);
+});
+
+test('speaks immediately when nothing is playing', async () => {
+  const { manager, runtime, speech } = createHarness();
+
+  const result = await manager.speak(context(), utterance('hello there'));
+
+  assert.equal(result.started, true);
+  assert.equal(result.position, 1);
+  assert.deepEqual(speech.requests, ['hello there']);
+  assert.deepEqual(
+    runtime.plays.map(({ title }) => title),
+    ['hello there'],
+  );
+});
+
+test('refuses to speak while a track is loaded, even when paused', async () => {
+  const { manager } = createHarness();
+  await manager.enqueue(context(), [track('first')]);
+
+  await assert.rejects(
+    manager.speak(context(), utterance('hello')),
+    /Cannot speak while music is loaded/,
+  );
+
+  await manager.pause('guild-1');
+  await assert.rejects(
+    manager.speak(context(), utterance('hello')),
+    /Cannot speak while music is loaded/,
+  );
+});
+
+test('queues a second utterance and speaks it when the first ends', async () => {
+  const { manager, runtime } = createHarness();
+
+  await manager.speak(context(), utterance('first message'));
+  const second = await manager.speak(context(), utterance('second message'));
+  assert.equal(second.started, false);
+  assert.equal(second.position, 1);
+  assert.deepEqual(
+    runtime.plays.map(({ title }) => title),
+    ['first message'],
+  );
+
+  await runtime.finish('guild-1');
+  await waitFor(() => runtime.plays.length === 2, 'the second utterance');
+  assert.deepEqual(
+    runtime.plays.map(({ title }) => title),
+    ['first message', 'second message'],
+  );
+});
+
+test('rejects an utterance once the speech queue is full', async () => {
+  const { manager } = createHarness({ maxSpeechQueueLength: 1 });
+
+  await manager.speak(context(), utterance('first'));
+  await manager.speak(context(), utterance('second'));
+
+  await assert.rejects(
+    manager.speak(context(), utterance('third')),
+    /can wait to be spoken/,
+  );
+});
+
+test('music queued during speech waits, then starts when the utterance ends', async () => {
+  const { manager, runtime } = createHarness();
+  await manager.speak(context(), utterance('hold on'));
+
+  const queued = await manager.enqueue(context(), [track('first')]);
+  assert.equal(queued.started, false);
+  assert.deepEqual(
+    runtime.plays.map(({ title }) => title),
+    ['hold on'],
+  );
+
+  await runtime.finish('guild-1');
+  assert.deepEqual(
+    runtime.plays.map(({ title }) => title),
+    ['hold on', 'Track first'],
+  );
+  assert.equal(manager.snapshot('guild-1').current?.title, 'Track first');
+});
+
+test('waiting music drops the remaining utterances and says so', async () => {
+  const notifications: string[] = [];
+  const { manager, runtime } = createHarness();
+
+  await manager.speak(context('guild-1', notifications), utterance('one'));
+  await manager.speak(context('guild-1', notifications), utterance('two'));
+  await manager.enqueue(context('guild-1', notifications), [track('first')]);
+
+  await runtime.finish('guild-1');
+
+  assert.deepEqual(
+    runtime.plays.map(({ title }) => title),
+    ['one', 'Track first'],
+  );
+  assert.ok(
+    notifications.some((message) =>
+      /1 queued message was dropped/.test(message),
+    ),
+  );
+});
+
+test('a synthesis failure is reported to the caller and leaves nothing playing', async () => {
+  const { manager, runtime, speech } = createHarness();
+  speech.failOn.add('broken');
+
+  await assert.rejects(
+    manager.speak(context(), utterance('broken')),
+    /cannot speak broken/,
+  );
+  assert.deepEqual(runtime.plays, []);
+
+  // The session stays usable for the next request.
+  await manager.speak(context(), utterance('fine'));
+  assert.deepEqual(
+    runtime.plays.map(({ title }) => title),
+    ['fine'],
+  );
+});
+
+test('a queued utterance that fails to synthesize drains to the next one', async () => {
+  const notifications: string[] = [];
+  const { manager, runtime, speech } = createHarness();
+  speech.failOn.add('broken');
+
+  await manager.speak(context('guild-1', notifications), utterance('first'));
+  await manager.speak(context('guild-1', notifications), utterance('broken'));
+  await manager.speak(context('guild-1', notifications), utterance('last'));
+
+  await runtime.finish('guild-1');
+  await waitFor(() => runtime.plays.length === 2, 'the queue to drain');
+
+  assert.deepEqual(
+    runtime.plays.map(({ title }) => title),
+    ['first', 'last'],
+  );
+  assert.ok(
+    notifications.some((message) => /cannot speak broken/.test(message)),
+  );
+});
+
+test('stop cancels the current utterance and clears the speech queue', async () => {
+  const { manager, runtime } = createHarness();
+  await manager.speak(context(), utterance('first'));
+  await manager.speak(context(), utterance('second'));
+
+  await manager.stop('guild-1');
+
+  assert.deepEqual(runtime.disposals, ['first']);
+  await runtime.finish('guild-1');
+  assert.deepEqual(
+    runtime.plays.map(({ title }) => title),
+    ['first'],
+  );
+  assert.equal(runtime.sessions.get('guild-1')?.destroyed, false);
+});
+
+test('the idle disconnect timer does not fire while speech is pending', async () => {
+  const { manager, runtime } = createHarness({ emptyDisconnectMs: 5 });
+  await manager.speak(context(), utterance('first'));
+  await manager.speak(context(), utterance('second'));
+
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(runtime.sessions.get('guild-1')?.destroyed, false);
+
+  await runtime.finish('guild-1');
+  await waitFor(() => runtime.plays.length === 2, 'the second utterance');
+  await runtime.finish('guild-1');
+  await waitFor(
+    () => runtime.sessions.get('guild-1')?.destroyed === true,
+    'the idle disconnect',
+  );
+});
+
+test('speaking is refused when no synthesizer is configured', async () => {
+  const { manager } = createHarness({ speech: undefined });
+
+  await assert.rejects(
+    manager.speak(context(), utterance('hello')),
+    /Text to speech is not configured/,
+  );
+});
+
+test('music is attenuated and speech is not', async () => {
+  const { manager, runtime } = createHarness();
+
+  await manager.speak(context(), utterance('spoken'));
+  await runtime.finish('guild-1');
+  await waitFor(() => runtime.plays.length === 1, 'the utterance');
+  await manager.enqueue(context(), [track('first')]);
+
+  // Speech goes through createSpeechPipeline, which records no volume at all.
+  assert.deepEqual(runtime.volumes, [0.5]);
+  assert.deepEqual(runtime.decoded, ['spoken']);
+});
+
+test('the music volume is configurable', async () => {
+  const { manager, runtime } = createHarness({ musicVolume: 1 });
+  await manager.enqueue(context(), [track('first')]);
+  assert.deepEqual(runtime.volumes, [1]);
+});
+
+test('stop interrupts synthesis instead of waiting for it', async () => {
+  let started = false;
+  let aborted = false;
+  const speech = {
+    async synthesize(_text: string, _preset: unknown, signal: AbortSignal) {
+      started = true;
+      // Stands in for a request that hangs until the engine's own timeout.
+      await new Promise<void>((resolve) => {
+        signal.addEventListener('abort', () => {
+          aborted = true;
+          resolve();
+        });
+      });
+      throw new TtsError('cancelled');
+    },
+  };
+  const { manager, runtime } = createHarness({ speech });
+
+  const speaking = manager
+    .speak(context(), utterance('slow'))
+    .catch((error: Error) => error.message);
+  await waitFor(() => started, 'synthesis to start');
+
+  // Would block for the engine's full timeout if synthesis held the guild lock.
+  await manager.stop('guild-1');
+
+  assert.equal(aborted, true);
+  assert.deepEqual(runtime.plays, []);
+  assert.match(String(await speaking), /cancelled/);
+});
+
+test('an utterance that cannot be decoded is reported before it is announced', async () => {
+  const { manager, runtime } = createHarness();
+  runtime.failDecode.add('undecodable');
+
+  await assert.rejects(
+    manager.speak(context(), utterance('undecodable')),
+    /cannot decode undecodable/,
+  );
+  // Nothing was ever handed to the player, so nothing was announced as spoken.
+  assert.deepEqual(runtime.plays, []);
+  assert.deepEqual(runtime.decoded, ['undecodable']);
+});
+
+test('a stop during synthesis discards the result instead of playing it', async () => {
+  let release: (() => void) | undefined;
+  const speech = {
+    async synthesize(text: string) {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { data: Buffer.from(text), contentType: 'audio/mpeg' };
+    },
+  };
+  const { manager, runtime } = createHarness({ speech });
+
+  const speaking = manager
+    .speak(context(), utterance('late'))
+    .catch(() => 'rejected');
+  await waitFor(() => release !== undefined, 'synthesis to start');
+  await manager.stop('guild-1');
+
+  // Synthesis finishes after the stop; the generation check must discard it.
+  release?.();
+  // Resolving here would let /tts announce audio that was thrown away.
+  assert.equal(await speaking, 'rejected');
+  await waitFor(
+    () => runtime.disposals.includes('late'),
+    'the discarded audio',
+  );
+  assert.deepEqual(runtime.plays, []);
+});
+
+test('a discarded utterance is reported as cancelled, not as spoken', async () => {
+  let release: (() => void) | undefined;
+  const speech = {
+    async synthesize(text: string) {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { data: Buffer.from(text), contentType: 'audio/mpeg' };
+    },
+  };
+  const { manager } = createHarness({ speech });
+
+  const speaking = manager.speak(context(), utterance('late'));
+  await waitFor(() => release !== undefined, 'synthesis to start');
+  await manager.stop('guild-1');
+  release?.();
+
+  await assert.rejects(speaking, /cancelled before it could be spoken/);
+});
+
+test('a first synthesis failure still speaks the utterance queued behind it', async () => {
+  const notifications: string[] = [];
+  const { manager, runtime, speech } = createHarness({ emptyDisconnectMs: 5 });
+  let release: (() => void) | undefined;
+  const failing = speech.synthesize.bind(speech);
+  speech.synthesize = async (text, preset, signal) => {
+    // Hold the first utterance open long enough for the second to queue behind
+    // it, so its failure is the one rethrown to the caller.
+    if (text === 'broken') {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    }
+    return failing(text, preset, signal);
+  };
+  speech.failOn.add('broken');
+
+  const first = manager
+    .speak(context('guild-1', notifications), utterance('broken'))
+    .catch((error: Error) => error.message);
+  await waitFor(() => release !== undefined, 'the first synthesis to start');
+  const second = await manager.speak(
+    context('guild-1', notifications),
+    utterance('waiting'),
+  );
+  release?.();
+
+  assert.equal(second.started, false);
+  assert.match(String(await first), /cannot speak broken/);
+  // Without a hand-off the drive loop would stop here, leaving 'waiting'
+  // unspoken and the session pinned open by a queue nothing drains.
+  await waitFor(
+    () => runtime.plays.length === 1,
+    'the queued utterance to be spoken',
+  );
+  assert.deepEqual(
+    runtime.plays.map(({ title }) => title),
+    ['waiting'],
+  );
+
+  await runtime.finish('guild-1');
+  await waitFor(
+    () => runtime.sessions.get('guild-1')?.destroyed === true,
+    'the idle disconnect',
+  );
+});
+
+test('a failed claim from a destroyed session cannot clear its replacement', async () => {
+  const pending = new Map<string, { settle(fail: boolean): void }>();
+  const { manager, runtime } = createHarness({
+    speech: {
+      async synthesize(text: string) {
+        await new Promise<void>((resolve, reject) => {
+          pending.set(text, {
+            settle: (fail) =>
+              fail ? reject(new TtsError(`cannot speak ${text}`)) : resolve(),
+          });
+        });
+        return { data: Buffer.from(text), contentType: 'audio/mpeg' };
+      },
+    },
+  });
+
+  const stale = manager
+    .speak(context(), utterance('stale'))
+    .catch((error: Error) => error.message);
+  await waitFor(() => pending.has('stale'), 'the first synthesis to start');
+
+  // Torn down and rebuilt while synthesis is still running: the replacement
+  // session starts its generation counter over, so its first utterance is
+  // numbered exactly like the claim still in flight against the old one.
+  await manager.disconnect('guild-1');
+  const fresh = manager.speak(context(), utterance('fresh'));
+  await waitFor(() => pending.has('fresh'), 'the second synthesis to start');
+
+  // Failing the stale claim runs its release path against the live session.
+  // Matching on the generation number alone would clear and abort 'fresh'.
+  pending.get('stale')?.settle(true);
+  assert.match(String(await stale), /cannot speak stale/);
+
+  pending.get('fresh')?.settle(false);
+  assert.equal((await fresh).started, true);
+  assert.deepEqual(
+    runtime.plays.map(({ title }) => title),
+    ['fresh'],
+  );
 });

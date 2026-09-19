@@ -5,6 +5,7 @@ PochanaBot is a modern Discord voice bot built with TypeScript.
 ## Features
 
 - YouTube URL playback and plain-text YouTube search.
+- Text-to-speech in your voice channel, via Microsoft Edge or Fish Audio voices.
 - A separate playback queue for every Discord server.
 - FFmpeg-based audio transcoding using a system-installed or local executable.
 
@@ -75,6 +76,10 @@ If commands were deployed successfully but do not appear in an older server, ope
 - `/stop` stops playback and clears the queue while keeping the voice connection open temporarily.
 - `/disconnect` clears playback and disconnects immediately.
 - `/queue` posts the current track and up to ten upcoming tracks publicly. When more tracks are queued, **Browse full queue** opens a private, live paginator for each viewer, starting with tracks 11–20. You do not need to join the voice channel to use it.
+- `/tts text:<message>` speaks a message, up to 300 characters, in your voice channel using your chosen voice. The bot joins if it is not already connected.
+- `/preset-tts preset:<voice>` picks the engine and voice `/tts` uses for you. The choice applies to every server and is kept only until the bot restarts.
+
+Two engines are available. **Microsoft Edge** voices need no credentials and are the default. **Fish Audio** voices are more expressive but need `FISH_API_KEY`; without it, selecting one reports that clearly instead of failing silently.
 
 Playback controls require you to be in the same voice channel as the bot. When a command succeeds, the bot posts a confirmation in the text channel. If the command cannot run (for example, because you are not in the bot's voice channel) the explanation is shown only to you.
 
@@ -85,6 +90,13 @@ Playback controls require you to be in the same voice channel as the bot. When a
 - If a track cannot be played, the bot reports it in the requesting text channel and moves on to the next track.
 - If a lost voice connection cannot be restored, the bot clears that server's playback session.
 - Playback queues are kept only in memory and are cleared when the bot restarts.
+
+Music always owns the audio player, and speech only fills idle time:
+
+- `/tts` is refused while a track is loaded, whether it is playing or paused. Use `/stop` first.
+- `/play` during an utterance queues the track and starts it as soon as that utterance ends, so speech never delays music by more than one message.
+- At most three messages can wait to be spoken. When music is waiting, the remaining messages are dropped once the current one finishes, and the bot says so.
+- `/stop` cancels the current utterance and clears the waiting messages. A message cancelled while it was still being synthesized is reported back as cancelled rather than announced as spoken.
 
 Two cleanup timers handle different kinds of "empty":
 

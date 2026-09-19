@@ -26,6 +26,9 @@ importers:
       libsodium-wrappers:
         specifier: ^0.8.4
         version: 0.8.4
+      ws:
+        specifier: ^8.21.3
+        version: 8.21.3
       youtubei.js:
         specifier: ^18.0.0
         version: 18.0.0
@@ -36,6 +39,9 @@ importers:
       '@types/node':
         specifier: ^26.4.1
         version: 26.4.1
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       eslint:
         specifier: ^10.9.1
         version: 10.9.1

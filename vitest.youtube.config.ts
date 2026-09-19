@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     fileParallelism: false,
-    include: ['test/live/**/*.test.ts'],
+    include: ['test/live/youtube*.test.ts'],
     testTimeout: 300_000,
   },
 });

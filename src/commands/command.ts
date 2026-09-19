@@ -20,7 +20,9 @@ export type CommandSuccessCode =
   | 'removed'
   | 'disconnected'
   | 'shown'
-  | 'empty';
+  | 'empty'
+  | 'spoken'
+  | 'voice_set';
 
 export type CommandRejectionCode =
   | 'guild_only'
@@ -29,7 +31,10 @@ export type CommandRejectionCode =
   | 'different_voice_channel'
   | 'unsupported_input'
   | 'media_rejected'
-  | 'playback_rejected';
+  | 'playback_rejected'
+  | 'music_active'
+  | 'unknown_voice'
+  | 'tts_rejected';
 
 export type CommandExecutionResult =
   | {
